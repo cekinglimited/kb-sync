@@ -2,6 +2,11 @@ name: SharePoint Sync
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1"
+
+permissions:
+  contents: write
 
 jobs:
   sync:
@@ -24,7 +29,12 @@ jobs:
             -H "Content-Type: application/x-www-form-urlencoded" \
             -d "client_id=${{ secrets.AZURE_CLIENT_ID }}&client_secret=${{ secrets.AZURE_CLIENT_SECRET }}&scope=https://graph.microsoft.com/.default&grant_type=client_credentials" | jq -r .access_token)
 
-          echo "ACCESS_TOKEN=$ACCESS_TOKEN" >> $GITHUB_ENV
+          if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" = "null" ]; then
+            echo "Failed to get access token"
+            exit 1
+          fi
+
+          echo "ACCESS_TOKEN=$ACCESS_TOKEN" >> "$GITHUB_ENV"
 
       - name: Sync all SharePoint files
         env:
@@ -34,6 +44,7 @@ jobs:
           python <<'PY'
           import os
           import json
+          import shutil
           import requests
           import mammoth
           from pathlib import Path
@@ -49,9 +60,11 @@ jobs:
           DOWNLOADS_DIR = OUTPUT_DIR / "downloads"
           CONTENT_DIR = OUTPUT_DIR / "content"
 
-          OUTPUT_DIR.mkdir(exist_ok=True)
-          DOWNLOADS_DIR.mkdir(exist_ok=True)
-          CONTENT_DIR.mkdir(exist_ok=True)
+          if OUTPUT_DIR.exists():
+              shutil.rmtree(OUTPUT_DIR)
+
+          DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
+          CONTENT_DIR.mkdir(parents=True, exist_ok=True)
 
           def graph_get(url):
               r = requests.get(url, headers=HEADERS, timeout=60)
@@ -103,20 +116,18 @@ jobs:
                       "error": str(e)
                   }
 
-          # Get site
           site_url = f"{BASE}/sites/{HOSTNAME}:{SITE_PATH}"
           site = graph_get(site_url)
           site_id = site["id"]
 
           print(f"Site found: {site.get('displayName')} ({site_id})")
 
-          # Get all drives / libraries
           drives = paged_get(f"{BASE}/sites/{site_id}/drives")
           print(f"Found {len(drives)} drives")
 
           index = []
 
-          def walk_drive(drive_id, current_path=""):
+          def walk_drive(drive_id, drive_name, current_path=""):
               if current_path:
                   url = f"{BASE}/drives/{drive_id}/root:/{current_path}:/children"
               else:
@@ -127,28 +138,26 @@ jobs:
               for item in items:
                   name = item["name"]
                   item_id = item["id"]
-
                   full_path = f"{current_path}/{name}" if current_path else name
 
                   if "folder" in item:
-                      print(f"[Folder] {full_path}")
-                      walk_drive(drive_id, full_path)
+                      print(f"[Folder] {drive_name}/{full_path}")
+                      walk_drive(drive_id, drive_name, full_path)
                       continue
 
                   if "file" not in item:
                       continue
 
                   ext = Path(name).suffix.lower()
-                  print(f"[File] {full_path}")
+                  print(f"[File] {drive_name}/{full_path}")
 
                   download_url = f"{BASE}/drives/{drive_id}/items/{item_id}/content"
 
-                  # Make local paths
-                  safe_rel = Path(*[safe_name(p) for p in full_path.split("/")])
+                  safe_rel = Path(safe_name(drive_name), *[safe_name(p) for p in full_path.split("/")])
+
                   local_download_path = DOWNLOADS_DIR / safe_rel
                   local_download_path.parent.mkdir(parents=True, exist_ok=True)
 
-                  # Download file
                   r = requests.get(download_url, headers=HEADERS, timeout=120)
                   r.raise_for_status()
                   local_download_path.write_bytes(r.content)
@@ -156,8 +165,10 @@ jobs:
                   converted = convert_file(local_download_path, ext)
 
                   content_record = {
+                      "drive_name": drive_name,
                       "name": name,
                       "path": full_path,
+                      "full_path": f"{drive_name}/{full_path}",
                       "drive_id": drive_id,
                       "item_id": item_id,
                       "web_url": item.get("webUrl"),
@@ -181,14 +192,17 @@ jobs:
                   )
 
                   index.append({
+                      "drive_name": drive_name,
                       "name": name,
                       "path": full_path,
+                      "full_path": f"{drive_name}/{full_path}",
                       "drive_id": drive_id,
                       "item_id": item_id,
                       "web_url": item.get("webUrl"),
                       "extension": ext,
                       "mime_type": item.get("file", {}).get("mimeType"),
                       "size": item.get("size"),
+                      "last_modified": item.get("lastModifiedDateTime"),
                       "content_type": converted.get("type"),
                       "output_file": str(out_json),
                   })
@@ -197,7 +211,7 @@ jobs:
               drive_id = drive["id"]
               drive_name = drive.get("name", "Unnamed Drive")
               print(f"Walking drive: {drive_name} ({drive_id})")
-              walk_drive(drive_id)
+              walk_drive(drive_id, drive_name)
 
           (OUTPUT_DIR / "index.json").write_text(
               json.dumps(index, ensure_ascii=False, indent=2),
@@ -218,7 +232,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add sharepoint_sync/
+          git add sharepoint_sync/content/ sharepoint_sync/index.json
 
           if git diff --cached --quiet; then
             echo "No changes to commit"
