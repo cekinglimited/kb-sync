@@ -7,6 +7,8 @@ const state = {
   page: 1,
   pageSize: 50,
   indexedCount: 0,
+  activeIndexingRun: 0,
+  pollingIntervalMs: 60_000,
 };
 
 const dom = {
@@ -50,15 +52,8 @@ init().catch((error) => {
 async function init() {
   wireEvents();
 
-  const index = await fetchJson("/sharepoint_sync/index.json");
-  state.records = Array.isArray(index)
-    ? index.map((r) => ({ ...r, _id: r.item_id || r.full_path || r.output_file }))
-    : [];
-
-  fillFilterOptions();
-  renderSyncSummary();
-  applyFilters();
-  startBackgroundIndexing();
+  await refreshIndex({ force: true });
+  startIndexPolling();
 
   const preselected = readSelectedFromUrl();
   if (preselected) selectRecordById(preselected);
@@ -121,6 +116,46 @@ function renderSyncSummary() {
     Math.max(...state.records.map((r) => new Date(r.last_modified || 0).getTime()))
   );
   dom.syncSummary.textContent = `${state.records.length} documents • latest update ${newest.toLocaleString()}`;
+}
+
+function startIndexPolling() {
+  window.setInterval(async () => {
+    try {
+      await refreshIndex();
+    } catch (error) {
+      console.error("Background sync check failed", error);
+    }
+  }, state.pollingIntervalMs);
+}
+
+async function refreshIndex({ force = false } = {}) {
+  const nextIndex = await fetchJson("/sharepoint_sync/index.json");
+  const nextRecords = Array.isArray(nextIndex)
+    ? nextIndex.map((r) => ({ ...r, _id: r.item_id || r.full_path || r.output_file }))
+    : [];
+
+  if (!force && !didIndexChange(state.records, nextRecords)) return false;
+
+  state.records = nextRecords;
+  state.filtered = [];
+  state.indexedCount = 0;
+  state.contentCache.clear();
+  state.contentTextIndex.clear();
+
+  rebuildFilterOptions();
+  renderSyncSummary();
+  applyFilters();
+  startBackgroundIndexing();
+
+  if (state.selectedKey) {
+    const selected = state.records.find((record) => record._id === state.selectedKey);
+    if (selected) {
+      selectRecord(selected, false);
+    } else {
+      selectRecord(null, false);
+    }
+  }
+  return true;
 }
 
 function applyFilters() {
@@ -271,25 +306,68 @@ async function fetchContent(record) {
 }
 
 function startBackgroundIndexing() {
+  state.activeIndexingRun += 1;
+  const runId = state.activeIndexingRun;
   const queue = [...state.records];
-  const workers = Array.from({ length: 5 }, () => indexWorker(queue));
+  const workers = Array.from({ length: 5 }, () => indexWorker(queue, runId));
 
   Promise.all(workers).then(() => {
+    if (runId !== state.activeIndexingRun) return;
     dom.indexingState.textContent = "Content index ready";
     applyFilters();
   });
 }
 
-async function indexWorker(queue) {
+async function indexWorker(queue, runId) {
   while (queue.length) {
+    if (runId !== state.activeIndexingRun) return;
     const rec = queue.shift();
     if (!rec) return;
     const doc = await fetchContent(rec);
+    if (runId !== state.activeIndexingRun) return;
     const text = extractSearchableText(doc);
     if (text) state.contentTextIndex.set(rec._id, text.toLowerCase());
     state.indexedCount += 1;
     dom.indexingState.textContent = `Indexed ${state.indexedCount}/${state.records.length} docs`;
   }
+}
+
+function rebuildFilterOptions() {
+  const currentDrive = dom.driveFilter.value;
+  const currentType = dom.typeFilter.value;
+
+  dom.driveFilter.innerHTML = "";
+  dom.typeFilter.innerHTML = "";
+  dom.driveFilter.add(new Option("All drives", ""));
+  dom.typeFilter.add(new Option("All file types", ""));
+
+  fillFilterOptions();
+
+  dom.driveFilter.value = hasOption(dom.driveFilter, currentDrive) ? currentDrive : "";
+  dom.typeFilter.value = hasOption(dom.typeFilter, currentType) ? currentType : "";
+}
+
+function didIndexChange(prevRecords, nextRecords) {
+  if (prevRecords.length !== nextRecords.length) return true;
+
+  const fingerprint = (record) => [
+    record._id,
+    record.last_modified,
+    record.output_file,
+    record.path,
+    record.full_path,
+    record.name,
+  ].join("|");
+
+  const prevSet = new Set(prevRecords.map(fingerprint));
+  for (const record of nextRecords) {
+    if (!prevSet.has(fingerprint(record))) return true;
+  }
+  return false;
+}
+
+function hasOption(selectEl, value) {
+  return [...selectEl.options].some((option) => option.value === value);
 }
 
 function buildSnippet(record, query) {
