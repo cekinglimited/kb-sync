@@ -8,11 +8,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y unzip jq
-          python -m pip install mammoth
+          sudo apt-get install -y jq
+          python -m pip install --upgrade pip
+          python -m pip install requests mammoth
 
       - name: Get access token
         run: |
@@ -22,37 +26,203 @@ jobs:
 
           echo "ACCESS_TOKEN=$ACCESS_TOKEN" >> $GITHUB_ENV
 
-      - name: Get SharePoint sites
+      - name: Sync all SharePoint files
+        env:
+          SHAREPOINT_HOSTNAME: ceking.sharepoint.com
+          SHAREPOINT_SITE_PATH: /sites/AI-Knowledge
         run: |
-          curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
-            "https://graph.microsoft.com/v1.0/sites?search=*"
+          python <<'PY'
+          import os
+          import json
+          import requests
+          import mammoth
+          from pathlib import Path
 
-      - name: Get drives
+          ACCESS_TOKEN = os.environ["ACCESS_TOKEN"]
+          HOSTNAME = os.environ["SHAREPOINT_HOSTNAME"]
+          SITE_PATH = os.environ["SHAREPOINT_SITE_PATH"]
+
+          BASE = "https://graph.microsoft.com/v1.0"
+          HEADERS = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+
+          OUTPUT_DIR = Path("sharepoint_sync")
+          DOWNLOADS_DIR = OUTPUT_DIR / "downloads"
+          CONTENT_DIR = OUTPUT_DIR / "content"
+
+          OUTPUT_DIR.mkdir(exist_ok=True)
+          DOWNLOADS_DIR.mkdir(exist_ok=True)
+          CONTENT_DIR.mkdir(exist_ok=True)
+
+          def graph_get(url):
+              r = requests.get(url, headers=HEADERS, timeout=60)
+              r.raise_for_status()
+              return r.json()
+
+          def paged_get(url):
+              items = []
+              while url:
+                  r = requests.get(url, headers=HEADERS, timeout=60)
+                  r.raise_for_status()
+                  data = r.json()
+                  items.extend(data.get("value", []))
+                  url = data.get("@odata.nextLink")
+              return items
+
+          def safe_name(value):
+              bad = '<>:"/\\|?*'
+              for ch in bad:
+                  value = value.replace(ch, "_")
+              return value
+
+          def convert_file(local_path: Path, ext: str):
+              ext = ext.lower()
+
+              try:
+                  if ext == ".docx":
+                      with open(local_path, "rb") as f:
+                          return {
+                              "type": "html",
+                              "content": mammoth.convert_to_html(f).value
+                          }
+
+                  elif ext in {".txt", ".md", ".csv", ".json", ".xml", ".html", ".htm"}:
+                      return {
+                          "type": "text",
+                          "content": local_path.read_text(encoding="utf-8", errors="ignore")
+                      }
+
+                  else:
+                      return {
+                          "type": "unsupported",
+                          "content": None
+                      }
+              except Exception as e:
+                  return {
+                      "type": "error",
+                      "content": None,
+                      "error": str(e)
+                  }
+
+          # Get site
+          site_url = f"{BASE}/sites/{HOSTNAME}:{SITE_PATH}"
+          site = graph_get(site_url)
+          site_id = site["id"]
+
+          print(f"Site found: {site.get('displayName')} ({site_id})")
+
+          # Get all drives / libraries
+          drives = paged_get(f"{BASE}/sites/{site_id}/drives")
+          print(f"Found {len(drives)} drives")
+
+          index = []
+
+          def walk_drive(drive_id, current_path=""):
+              if current_path:
+                  url = f"{BASE}/drives/{drive_id}/root:/{current_path}:/children"
+              else:
+                  url = f"{BASE}/drives/{drive_id}/root/children"
+
+              items = paged_get(url)
+
+              for item in items:
+                  name = item["name"]
+                  item_id = item["id"]
+
+                  full_path = f"{current_path}/{name}" if current_path else name
+
+                  if "folder" in item:
+                      print(f"[Folder] {full_path}")
+                      walk_drive(drive_id, full_path)
+                      continue
+
+                  if "file" not in item:
+                      continue
+
+                  ext = Path(name).suffix.lower()
+                  print(f"[File] {full_path}")
+
+                  download_url = f"{BASE}/drives/{drive_id}/items/{item_id}/content"
+
+                  # Make local paths
+                  safe_rel = Path(*[safe_name(p) for p in full_path.split("/")])
+                  local_download_path = DOWNLOADS_DIR / safe_rel
+                  local_download_path.parent.mkdir(parents=True, exist_ok=True)
+
+                  # Download file
+                  r = requests.get(download_url, headers=HEADERS, timeout=120)
+                  r.raise_for_status()
+                  local_download_path.write_bytes(r.content)
+
+                  converted = convert_file(local_download_path, ext)
+
+                  content_record = {
+                      "name": name,
+                      "path": full_path,
+                      "drive_id": drive_id,
+                      "item_id": item_id,
+                      "web_url": item.get("webUrl"),
+                      "mime_type": item.get("file", {}).get("mimeType"),
+                      "size": item.get("size"),
+                      "last_modified": item.get("lastModifiedDateTime"),
+                      "created": item.get("createdDateTime"),
+                      "extension": ext,
+                      "content_type": converted.get("type"),
+                      "content": converted.get("content"),
+                  }
+
+                  if "error" in converted:
+                      content_record["conversion_error"] = converted["error"]
+
+                  out_json = CONTENT_DIR / safe_rel.with_suffix(".json")
+                  out_json.parent.mkdir(parents=True, exist_ok=True)
+                  out_json.write_text(
+                      json.dumps(content_record, ensure_ascii=False, indent=2),
+                      encoding="utf-8"
+                  )
+
+                  index.append({
+                      "name": name,
+                      "path": full_path,
+                      "drive_id": drive_id,
+                      "item_id": item_id,
+                      "web_url": item.get("webUrl"),
+                      "extension": ext,
+                      "mime_type": item.get("file", {}).get("mimeType"),
+                      "size": item.get("size"),
+                      "content_type": converted.get("type"),
+                      "output_file": str(out_json),
+                  })
+
+          for drive in drives:
+              drive_id = drive["id"]
+              drive_name = drive.get("name", "Unnamed Drive")
+              print(f"Walking drive: {drive_name} ({drive_id})")
+              walk_drive(drive_id)
+
+          (OUTPUT_DIR / "index.json").write_text(
+              json.dumps(index, ensure_ascii=False, indent=2),
+              encoding="utf-8"
+          )
+
+          print(f"Done. Indexed {len(index)} files.")
+          PY
+
+      - name: Upload sync output
+        uses: actions/upload-artifact@v4
+        with:
+          name: sharepoint-sync
+          path: sharepoint_sync/
+
+      - name: Commit synced content
         run: |
-          curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
-            "https://graph.microsoft.com/v1.0/sites/ceking.sharepoint.com:/sites/AI-Knowledge:/drives"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Get FAQ files
-        run: |
-          curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
-            "https://graph.microsoft.com/v1.0/drives/b!uqgHR9wiN0uomwuRQeJTgVqAfA4bIDRBtstVmpSQbdNFofPisy05Ra0aiz0-Crn4/root:/Knowledge%20Base/FAQ:/children"
+          git add sharepoint_sync/
 
-      - name: Convert ALL FAQ files
-        run: |
-          curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
-            "https://graph.microsoft.com/v1.0/drives/b!uqgHR9wiN0uomwuRQeJTgVqAfA4bIDRBtstVmpSQbdNFofPisy05Ra0aiz0-Crn4/root:/Knowledge%20Base/FAQ:/children" \
-            > files.json
-
-          jq -r '.value[] | @base64' files.json | while read row; do
-            ITEM=$(echo "$row" | base64 -d)
-            NAME=$(echo "$ITEM" | jq -r '.name')
-            ID=$(echo "$ITEM" | jq -r '.id')
-
-            echo "Processing: $NAME"
-
-            curl -s -L -H "Authorization: Bearer $ACCESS_TOKEN" \
-              "https://graph.microsoft.com/v1.0/drives/b!uqgHR9wiN0uomwuRQeJTgVqAfA4bIDRBtstVmpSQbdNFofPisy05Ra0aiz0-Crn4/items/$ID/content" \
-              -o "$NAME"
-
-            python -c "import mammoth, json; html = mammoth.convert_to_html(open('$NAME','rb')).value; print(json.dumps({'file': '$NAME', 'content': html}))"
-          done
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update SharePoint sync output"
+            git push
+          fi
