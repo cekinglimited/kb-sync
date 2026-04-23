@@ -12,6 +12,9 @@ const state = {
   unchangedPolls: 0,
   indexPath: resolveIndexPath(),
   lastSuccessfulIndexFetchAt: null,
+  lastPollAt: null,
+  lastPollError: null,
+  previousIndexSignature: null,
 };
 
 const dom = {
@@ -37,6 +40,7 @@ const dom = {
   docContent: document.getElementById("docContent"),
   copyLinkBtn: document.getElementById("copyLinkBtn"),
   resultItemTemplate: document.getElementById("resultItemTemplate"),
+  debugPanel: null,
 };
 
 const sorters = {
@@ -54,9 +58,17 @@ init().catch((error) => {
 
 async function init() {
   wireEvents();
+  ensureDebugPanel();
+  console.info(`[SharePoint sync] Using index path: ${state.indexPath}`);
+  updateDebugPanel();
 
-  await refreshIndex({ force: true });
-  startIndexPolling();
+  try {
+    await refreshIndex({ force: true, source: "initial-load" });
+  } catch (error) {
+    console.error("[SharePoint sync] Initial index refresh failed. Polling will continue.", error);
+  } finally {
+    startIndexPolling();
+  }
 
   const preselected = readSelectedFromUrl();
   if (preselected) selectRecordById(preselected);
@@ -126,27 +138,43 @@ function renderSyncSummary() {
 }
 
 function startIndexPolling() {
+  console.info(
+    `[SharePoint sync] Starting polling every ${state.pollingIntervalMs / 1000}s for ${state.indexPath}`
+  );
   window.setInterval(async () => {
     const startedAt = new Date().toISOString();
+    state.lastPollAt = startedAt;
     console.info(
       `[SharePoint sync] Polling index at ${startedAt} (${state.pollingIntervalMs / 1000}s interval): ${state.indexPath}`
     );
+    updateDebugPanel();
     try {
       await refreshIndex({ source: "poll" });
     } catch (error) {
       console.error("[SharePoint sync] Polling run failed. Will retry on next interval.", error);
+      state.lastPollError = readableError(error);
+      updateDebugPanel();
     }
   }, state.pollingIntervalMs);
 }
 
 async function refreshIndex({ force = false, source = "manual" } = {}) {
+  state.lastPollAt = new Date().toISOString();
   const nextIndex = await fetchJson(state.indexPath, { bustCache: true });
   state.lastSuccessfulIndexFetchAt = new Date().toISOString();
+  state.lastPollError = null;
   const nextRecords = Array.isArray(nextIndex)
     ? nextIndex.map((r) => ({ ...r, _id: r.item_id || r.full_path || r.output_file }))
     : [];
+  const nextSignature = stableStringify(nextIndex);
+  const didChange = state.previousIndexSignature !== nextSignature;
 
-  if (!force && !didIndexChange(state.records, nextRecords)) {
+  console.info(
+    `[SharePoint sync] Change detection (${source}): changed=${didChange} force=${force} files=${nextRecords.length}`
+  );
+  updateDebugPanel();
+
+  if (!force && !didChange) {
     state.unchangedPolls += 1;
     console.info(
       `[SharePoint sync] No index change detected on ${source} check (consecutive unchanged checks: ${state.unchangedPolls}).`
@@ -159,10 +187,12 @@ async function refreshIndex({ force = false, source = "manual" } = {}) {
       );
     }
     renderSyncSummary();
+    updateDebugPanel();
     return false;
   }
 
   state.unchangedPolls = 0;
+  state.previousIndexSignature = nextSignature;
   console.info(
     `[SharePoint sync] New index data detected on ${source} check. Refreshing UI with ${nextRecords.length} records.`
   );
@@ -177,6 +207,8 @@ async function refreshIndex({ force = false, source = "manual" } = {}) {
   renderSyncSummary();
   applyFilters();
   startBackgroundIndexing();
+  updateDebugPanel();
+  console.info("[SharePoint sync] UI updated after index refresh.");
 
   if (state.selectedKey) {
     const selected = state.records.find((record) => record._id === state.selectedKey);
@@ -476,9 +508,11 @@ function formatDate(value) {
 
 async function fetchJson(path, { bustCache = false } = {}) {
   const requestUrl = bustCache ? withCacheBust(path) : path;
+  console.info(`[SharePoint sync] Fetching URL: ${requestUrl}`);
   let res;
   try {
     res = await fetch(requestUrl, { cache: "no-store" });
+    console.info(`[SharePoint sync] Fetch status for ${requestUrl}: ${res.status}`);
   } catch (error) {
     console.error(`[SharePoint sync] Network error while fetching ${requestUrl}`, error);
     throw error;
@@ -503,6 +537,52 @@ function withCacheBust(path) {
   const url = new URL(path, window.location.origin);
   url.searchParams.set("t", Date.now().toString());
   return `${url.pathname}${url.search}`;
+}
+
+function ensureDebugPanel() {
+  const syncSummary = document.getElementById("syncSummary");
+  if (!syncSummary || syncSummary.parentElement?.querySelector('[data-debug-panel="sync"]')) return;
+  const panel = document.createElement("div");
+  panel.dataset.debugPanel = "sync";
+  panel.className = "subtle";
+  panel.style.fontSize = "0.8rem";
+  panel.style.marginTop = "0.35rem";
+  panel.style.opacity = "0.9";
+  panel.setAttribute("aria-live", "polite");
+  syncSummary.insertAdjacentElement("afterend", panel);
+  dom.debugPanel = panel;
+}
+
+function updateDebugPanel() {
+  if (!dom.debugPanel) return;
+  dom.debugPanel.innerHTML = [
+    `<strong>Debug:</strong>`,
+    `Last poll: ${formatDate(state.lastPollAt)}`,
+    `Last successful refresh: ${formatDate(state.lastSuccessfulIndexFetchAt)}`,
+    `Last error: ${escapeHtml(state.lastPollError || "None")}`,
+    `Loaded files: ${state.records.length}`,
+  ].join(" • ");
+}
+
+function stableStringify(value) {
+  return JSON.stringify(sortRecursively(value));
+}
+
+function sortRecursively(value) {
+  if (Array.isArray(value)) return value.map(sortRecursively);
+  if (!value || typeof value !== "object") return value;
+  return Object.keys(value)
+    .sort()
+    .reduce((acc, key) => {
+      acc[key] = sortRecursively(value[key]);
+      return acc;
+    }, {});
+}
+
+function readableError(error) {
+  if (!error) return "Unknown error";
+  if (typeof error === "string") return error;
+  return error.message || "Unknown error";
 }
 
 function resolveIndexPath() {
