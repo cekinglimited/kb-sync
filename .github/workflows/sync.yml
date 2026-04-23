@@ -2,13 +2,14 @@ name: SharePoint Sync
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 * * * *"
 
 jobs:
   sync:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Test connection
-        run: echo "Workflow is working"
+      - name: Get access token
+        run: |
+          curl -X POST "https://login.microsoftonline.com/${{ secrets.AZURE_TENANT_ID }}/oauth2/v2.0/token" \
+          -H "Content-Type: application/x-www-form-urlencoded" \
+          -d "client_id=${{ secrets.AZURE_CLIENT_ID }}&client_secret=${{ secrets.AZURE_CLIENT_SECRET }}&scope=https://graph.microsoft.com/.default&grant_type=client_credentials"
