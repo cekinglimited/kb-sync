@@ -30,6 +30,25 @@ npx serve .
 - In Azure Static Web Apps, set app location to the repository root (`/`) and output location to empty (or `/`, depending on portal input).
 - Ensure your SharePoint sync workflow continues committing updated JSON files under `sharepoint_sync/`.
 
+## Deployment runbook
+
+Use this checklist when you want to deploy a front-end change (including removing debug UI elements).
+
+1. **Create and merge your PR into `main`.**
+   - This repo deploys to Azure Static Web Apps from pushes to `main`.
+2. **Confirm the Azure deploy workflow runs successfully.**
+   - Workflow file: `.github/workflows/azure-static-web-apps-orange-plant-05fa93210.yml`
+   - Trigger: `push` on `main`
+3. **Verify the production site after deployment.**
+   - Hard refresh the page (Ctrl/Cmd+Shift+R) to avoid stale JS.
+   - Check the document list, filters, and `/doc/{id}` deep links.
+4. **If content looks stale, run the SharePoint sync workflow manually.**
+   - Workflow file: `.github/workflows/sync.yml`
+   - Trigger: `workflow_dispatch` (manual) or every 5 minutes (scheduled cron).
+   - This regenerates `sharepoint_sync/index.json` and `sharepoint_sync/content/**/*.json`.
+5. **Re-check production once sync commits are pushed.**
+   - Any new commit to `main` from the sync workflow triggers a fresh static app deployment.
+
 ## Front-end behavior summary
 
 - Loads index records from `sharepoint_sync/index.json`.

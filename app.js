@@ -17,7 +17,6 @@ const state = {
   previousIndexSignature: null,
   nextPollDueAt: null,
   pollTimeoutId: null,
-  pollCountdownTimerId: null,
 };
 
 const dom = {
@@ -43,7 +42,6 @@ const dom = {
   docContent: document.getElementById("docContent"),
   copyLinkBtn: document.getElementById("copyLinkBtn"),
   resultItemTemplate: document.getElementById("resultItemTemplate"),
-  debugPanel: null,
 };
 
 const sorters = {
@@ -61,9 +59,7 @@ init().catch((error) => {
 
 async function init() {
   wireEvents();
-  ensureDebugPanel();
   console.info(`[SharePoint sync] Using index path: ${state.indexPath}`);
-  updateDebugPanel();
 
   try {
     await refreshIndex({ force: true, source: "initial-load" });
@@ -142,14 +138,10 @@ function renderSyncSummary() {
 
 function startIndexPolling() {
   if (state.pollTimeoutId) window.clearTimeout(state.pollTimeoutId);
-  if (state.pollCountdownTimerId) window.clearInterval(state.pollCountdownTimerId);
   console.info(
     `[SharePoint sync] Starting polling every ${state.pollingIntervalMs / 1000}s for ${state.indexPath}`
   );
   state.nextPollDueAt = Date.now() + state.pollingIntervalMs;
-  state.pollCountdownTimerId = window.setInterval(() => {
-    updateDebugPanel();
-  }, 1000);
   scheduleNextPoll();
 }
 
@@ -168,18 +160,15 @@ function scheduleNextPoll() {
     console.info(
       `[SharePoint sync] Polling index at ${startedAtIso} (${state.pollingIntervalMs / 1000}s interval): ${state.indexPath}`
     );
-    updateDebugPanel();
     try {
       await refreshIndex({ source: "poll" });
     } catch (error) {
       console.error("[SharePoint sync] Polling run failed. Will retry on next interval.", error);
       state.lastPollError = readableError(error);
-      updateDebugPanel();
     } finally {
       scheduleNextPoll();
     }
   }, delayMs);
-  updateDebugPanel();
 }
 
 async function refreshIndex({ force = false, source = "manual" } = {}) {
@@ -196,7 +185,6 @@ async function refreshIndex({ force = false, source = "manual" } = {}) {
   console.info(
     `[SharePoint sync] Change detection (${source}): changed=${didChange} force=${force} files=${nextRecords.length}`
   );
-  updateDebugPanel();
 
   if (!force && !didChange) {
     state.unchangedPolls += 1;
@@ -212,7 +200,6 @@ async function refreshIndex({ force = false, source = "manual" } = {}) {
       );
     }
     renderSyncSummary();
-    updateDebugPanel();
     console.info("[SharePoint sync] UI re-render skipped because index payload is unchanged.");
     return false;
   }
@@ -233,7 +220,6 @@ async function refreshIndex({ force = false, source = "manual" } = {}) {
   renderSyncSummary();
   applyFilters();
   startBackgroundIndexing();
-  updateDebugPanel();
   console.info("[SharePoint sync] UI re-rendered after index refresh.");
 
   if (state.selectedKey) {
@@ -565,44 +551,6 @@ function withCacheBust(path) {
   const url = new URL(path, window.location.origin);
   url.searchParams.set("t", Date.now().toString());
   return `${url.pathname}${url.search}`;
-}
-
-function ensureDebugPanel() {
-  const syncSummary = document.getElementById("syncSummary");
-  const existingPanel =
-    document.querySelector('[data-debug-panel="sync"]') ||
-    document.getElementById("syncDebugPanel") ||
-    document.getElementById("debugPanel");
-  if (existingPanel) {
-    dom.debugPanel = existingPanel;
-    return;
-  }
-  if (!syncSummary) return;
-  const panel = document.createElement("div");
-  panel.dataset.debugPanel = "sync";
-  panel.className = "subtle";
-  panel.style.fontSize = "0.8rem";
-  panel.style.marginTop = "0.35rem";
-  panel.style.opacity = "0.9";
-  panel.setAttribute("aria-live", "polite");
-  syncSummary.insertAdjacentElement("afterend", panel);
-  dom.debugPanel = panel;
-}
-
-function updateDebugPanel() {
-  if (!dom.debugPanel) return;
-  const now = Date.now();
-  const nextSyncInSeconds = state.nextPollDueAt
-    ? Math.max(0, Math.ceil((state.nextPollDueAt - now) / 1000))
-    : Math.ceil(state.pollingIntervalMs / 1000);
-  dom.debugPanel.innerHTML = [
-    `<strong>Debug:</strong>`,
-    `Next sync in: ${nextSyncInSeconds}s`,
-    `Last poll attempt: ${formatDate(state.lastPollAt)}`,
-    `Last successful refresh: ${formatDate(state.lastSuccessfulIndexFetchAt)}`,
-    `Last error: ${escapeHtml(state.lastPollError || "none")}`,
-    `Current file count: ${state.records.length}`,
-  ].join(" • ");
 }
 
 function stableStringify(value) {
