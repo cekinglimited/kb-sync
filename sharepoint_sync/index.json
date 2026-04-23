@@ -9,8 +9,8 @@
     "web_url": "https://ceking.sharepoint.com/sites/AI-Knowledge/_layouts/15/Doc.aspx?sourcedoc=%7B5AD876D5-7228-4B52-AFE9-5029C1E94B59%7D&file=Customer-Service-and-Contact-V1.docx&action=default&mobileredirect=true",
     "extension": ".docx",
     "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "size": 17800,
-    "last_modified": "2026-03-17T10:25:02Z",
+    "size": 15983,
+    "last_modified": "2026-04-23T14:21:39Z",
     "content_type": "html",
     "output_file": "sharepoint_sync/content/Documents/Knowledge Base/FAQ/Customer-Service-and-Contact-V1.json"
   },
@@ -133,6 +133,21 @@
     "last_modified": "2026-03-17T10:25:02Z",
     "content_type": "html",
     "output_file": "sharepoint_sync/content/Documents/Knowledge Base/FAQ/Response-Time-Commitment-V1.json"
+  },
+  {
+    "drive_name": "Documents",
+    "name": "test.docx",
+    "path": "Knowledge Base/FAQ/test.docx",
+    "full_path": "Documents/Knowledge Base/FAQ/test.docx",
+    "drive_id": "b!uqgHR9wiN0uomwuRQeJTgVqAfA4bIDRBtstVmpSQbdNFofPisy05Ra0aiz0-Crn4",
+    "item_id": "01APWLVA3FHJDJFE2K7JG2MJGQ3QDVNE6F",
+    "web_url": "https://ceking.sharepoint.com/sites/AI-Knowledge/_layouts/15/Doc.aspx?sourcedoc=%7B92463A65-4A93-4DFA-A624-D0DC075693C5%7D&file=test.docx&action=default&mobileredirect=true",
+    "extension": ".docx",
+    "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "size": 19310,
+    "last_modified": "2026-04-23T14:22:37Z",
+    "content_type": "html",
+    "output_file": "sharepoint_sync/content/Documents/Knowledge Base/FAQ/test.json"
   },
   {
     "drive_name": "Documents",

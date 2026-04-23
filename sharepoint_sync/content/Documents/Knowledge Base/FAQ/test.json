@@ -1,0 +1,16 @@
+{
+  "drive_name": "Documents",
+  "name": "test.docx",
+  "path": "Knowledge Base/FAQ/test.docx",
+  "full_path": "Documents/Knowledge Base/FAQ/test.docx",
+  "drive_id": "b!uqgHR9wiN0uomwuRQeJTgVqAfA4bIDRBtstVmpSQbdNFofPisy05Ra0aiz0-Crn4",
+  "item_id": "01APWLVA3FHJDJFE2K7JG2MJGQ3QDVNE6F",
+  "web_url": "https://ceking.sharepoint.com/sites/AI-Knowledge/_layouts/15/Doc.aspx?sourcedoc=%7B92463A65-4A93-4DFA-A624-D0DC075693C5%7D&file=test.docx&action=default&mobileredirect=true",
+  "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "size": 19310,
+  "last_modified": "2026-04-23T14:22:37Z",
+  "created": "2026-04-23T13:33:18Z",
+  "extension": ".docx",
+  "content_type": "html",
+  "content": "<p>test</p>"
+}
