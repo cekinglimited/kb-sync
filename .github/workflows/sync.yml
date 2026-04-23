@@ -13,3 +13,11 @@ jobs:
           curl -X POST "https://login.microsoftonline.com/${{ secrets.AZURE_TENANT_ID }}/oauth2/v2.0/token" \
           -H "Content-Type: application/x-www-form-urlencoded" \
           -d "client_id=${{ secrets.AZURE_CLIENT_ID }}&client_secret=${{ secrets.AZURE_CLIENT_SECRET }}&scope=https://graph.microsoft.com/.default&grant_type=client_credentials"
+      - name: Get SharePoint sites
+        run: |
+          ACCESS_TOKEN=$(curl -s -X POST "https://login.microsoftonline.com/${{ secrets.AZURE_TENANT_ID }}/oauth2/v2.0/token" \
+          -H "Content-Type: application/x-www-form-urlencoded" \
+          -d "client_id=${{ secrets.AZURE_CLIENT_ID }}&client_secret=${{ secrets.AZURE_CLIENT_SECRET }}&scope=https://graph.microsoft.com/.default&grant_type=client_credentials" | jq -r .access_token)
+
+          curl -H "Authorization: Bearer $ACCESS_TOKEN" \
+          "https://graph.microsoft.com/v1.0/sites?search=*"
