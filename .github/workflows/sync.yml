@@ -1,0 +1,14 @@
+name: SharePoint Sync
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 * * * *"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Test connection
+        run: echo "Workflow is working"
