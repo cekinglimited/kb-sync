@@ -9,6 +9,9 @@ const state = {
   indexedCount: 0,
   activeIndexingRun: 0,
   pollingIntervalMs: 60_000,
+  unchangedPolls: 0,
+  indexPath: resolveIndexPath(),
+  lastSuccessfulIndexFetchAt: null,
 };
 
 const dom = {
@@ -108,33 +111,61 @@ function fillFilterOptions() {
 }
 
 function renderSyncSummary() {
+  const syncTime = state.lastSuccessfulIndexFetchAt
+    ? ` • index checked ${formatDate(state.lastSuccessfulIndexFetchAt)}`
+    : "";
+
   if (!state.records.length) {
-    dom.syncSummary.textContent = "No synced documents found.";
+    dom.syncSummary.textContent = `No synced documents found${syncTime}.`;
     return;
   }
   const newest = new Date(
     Math.max(...state.records.map((r) => new Date(r.last_modified || 0).getTime()))
   );
-  dom.syncSummary.textContent = `${state.records.length} documents • latest update ${newest.toLocaleString()}`;
+  dom.syncSummary.textContent = `${state.records.length} documents • latest update ${newest.toLocaleString()}${syncTime}`;
 }
 
 function startIndexPolling() {
   window.setInterval(async () => {
+    const startedAt = new Date().toISOString();
+    console.info(
+      `[SharePoint sync] Polling index at ${startedAt} (${state.pollingIntervalMs / 1000}s interval): ${state.indexPath}`
+    );
     try {
-      await refreshIndex();
+      await refreshIndex({ source: "poll" });
     } catch (error) {
-      console.error("Background sync check failed", error);
+      console.error("[SharePoint sync] Polling run failed. Will retry on next interval.", error);
     }
   }, state.pollingIntervalMs);
 }
 
-async function refreshIndex({ force = false } = {}) {
-  const nextIndex = await fetchJson("/sharepoint_sync/index.json");
+async function refreshIndex({ force = false, source = "manual" } = {}) {
+  const nextIndex = await fetchJson(state.indexPath, { bustCache: true });
+  state.lastSuccessfulIndexFetchAt = new Date().toISOString();
   const nextRecords = Array.isArray(nextIndex)
     ? nextIndex.map((r) => ({ ...r, _id: r.item_id || r.full_path || r.output_file }))
     : [];
 
-  if (!force && !didIndexChange(state.records, nextRecords)) return false;
+  if (!force && !didIndexChange(state.records, nextRecords)) {
+    state.unchangedPolls += 1;
+    console.info(
+      `[SharePoint sync] No index change detected on ${source} check (consecutive unchanged checks: ${state.unchangedPolls}).`
+    );
+    if (source === "poll" && state.unchangedPolls >= 5) {
+      console.warn(
+        "[SharePoint sync] Frontend polling is working, but index.json has not changed for several checks. " +
+          "If new SharePoint files are missing, verify backend automation updates /sharepoint_sync/index.json " +
+          "(for example: GitHub Action job, sync API rebuild endpoint, or SharePoint sync trigger)."
+      );
+    }
+    renderSyncSummary();
+    return false;
+  }
+
+  state.unchangedPolls = 0;
+  console.info(
+    `[SharePoint sync] New index data detected on ${source} check. Refreshing UI with ${nextRecords.length} records.`
+  );
 
   state.records = nextRecords;
   state.filtered = [];
@@ -443,10 +474,43 @@ function formatDate(value) {
   return d.toLocaleString();
 }
 
-async function fetchJson(path) {
-  const res = await fetch(path, { cache: "no-store" });
-  if (!res.ok) throw new Error(`Failed to fetch ${path}: ${res.status}`);
-  return res.json();
+async function fetchJson(path, { bustCache = false } = {}) {
+  const requestUrl = bustCache ? withCacheBust(path) : path;
+  let res;
+  try {
+    res = await fetch(requestUrl, { cache: "no-store" });
+  } catch (error) {
+    console.error(`[SharePoint sync] Network error while fetching ${requestUrl}`, error);
+    throw error;
+  }
+
+  if (!res.ok) {
+    const message = `Failed to fetch ${requestUrl}: ${res.status} ${res.statusText}`;
+    console.error(`[SharePoint sync] ${message}`);
+    throw new Error(message);
+  }
+
+  const rawText = await res.text();
+  try {
+    return JSON.parse(rawText);
+  } catch (error) {
+    console.error(`[SharePoint sync] Invalid JSON from ${requestUrl}`, error);
+    throw new Error(`Invalid JSON from ${requestUrl}`);
+  }
+}
+
+function withCacheBust(path) {
+  const url = new URL(path, window.location.origin);
+  url.searchParams.set("t", Date.now().toString());
+  return `${url.pathname}${url.search}`;
+}
+
+function resolveIndexPath() {
+  const configuredPath = window.__KB_INDEX_PATH__ || "/sharepoint_sync/index.json";
+  if (typeof configuredPath !== "string" || !configuredPath.trim()) {
+    return "/sharepoint_sync/index.json";
+  }
+  return configuredPath.startsWith("/") ? configuredPath : `/${configuredPath}`;
 }
 
 function unique(items) {
