@@ -15,6 +15,9 @@ const state = {
   lastPollAt: null,
   lastPollError: null,
   previousIndexSignature: null,
+  nextPollDueAt: null,
+  pollTimeoutId: null,
+  pollCountdownTimerId: null,
 };
 
 const dom = {
@@ -138,14 +141,32 @@ function renderSyncSummary() {
 }
 
 function startIndexPolling() {
+  if (state.pollTimeoutId) window.clearTimeout(state.pollTimeoutId);
+  if (state.pollCountdownTimerId) window.clearInterval(state.pollCountdownTimerId);
   console.info(
     `[SharePoint sync] Starting polling every ${state.pollingIntervalMs / 1000}s for ${state.indexPath}`
   );
-  window.setInterval(async () => {
-    const startedAt = new Date().toISOString();
-    state.lastPollAt = startedAt;
+  state.nextPollDueAt = Date.now() + state.pollingIntervalMs;
+  state.pollCountdownTimerId = window.setInterval(() => {
+    updateDebugPanel();
+  }, 1000);
+  scheduleNextPoll();
+}
+
+function scheduleNextPoll() {
+  if (state.pollTimeoutId) window.clearTimeout(state.pollTimeoutId);
+  const now = Date.now();
+  const dueAt = state.nextPollDueAt || now + state.pollingIntervalMs;
+  const delayMs = Math.max(0, dueAt - now);
+  console.info(
+    `[SharePoint sync] Next poll scheduled in ${Math.ceil(delayMs / 1000)}s at ${new Date(dueAt).toISOString()}`
+  );
+  state.pollTimeoutId = window.setTimeout(async () => {
+    const startedAtIso = new Date().toISOString();
+    state.lastPollAt = startedAtIso;
+    state.nextPollDueAt = Date.now() + state.pollingIntervalMs;
     console.info(
-      `[SharePoint sync] Polling index at ${startedAt} (${state.pollingIntervalMs / 1000}s interval): ${state.indexPath}`
+      `[SharePoint sync] Polling index at ${startedAtIso} (${state.pollingIntervalMs / 1000}s interval): ${state.indexPath}`
     );
     updateDebugPanel();
     try {
@@ -154,8 +175,11 @@ function startIndexPolling() {
       console.error("[SharePoint sync] Polling run failed. Will retry on next interval.", error);
       state.lastPollError = readableError(error);
       updateDebugPanel();
+    } finally {
+      scheduleNextPoll();
     }
-  }, state.pollingIntervalMs);
+  }, delayMs);
+  updateDebugPanel();
 }
 
 async function refreshIndex({ force = false, source = "manual" } = {}) {
@@ -180,6 +204,7 @@ async function refreshIndex({ force = false, source = "manual" } = {}) {
       `[SharePoint sync] No index change detected on ${source} check (consecutive unchanged checks: ${state.unchangedPolls}).`
     );
     if (source === "poll" && state.unchangedPolls >= 5) {
+      // Important operational truth: frontend polling can be healthy while backend sync/index generation is stale.
       console.warn(
         "[SharePoint sync] Frontend polling is working, but index.json has not changed for several checks. " +
           "If new SharePoint files are missing, verify backend automation updates /sharepoint_sync/index.json " +
@@ -188,6 +213,7 @@ async function refreshIndex({ force = false, source = "manual" } = {}) {
     }
     renderSyncSummary();
     updateDebugPanel();
+    console.info("[SharePoint sync] UI re-render skipped because index payload is unchanged.");
     return false;
   }
 
@@ -208,7 +234,7 @@ async function refreshIndex({ force = false, source = "manual" } = {}) {
   applyFilters();
   startBackgroundIndexing();
   updateDebugPanel();
-  console.info("[SharePoint sync] UI updated after index refresh.");
+  console.info("[SharePoint sync] UI re-rendered after index refresh.");
 
   if (state.selectedKey) {
     const selected = state.records.find((record) => record._id === state.selectedKey);
@@ -526,7 +552,9 @@ async function fetchJson(path, { bustCache = false } = {}) {
 
   const rawText = await res.text();
   try {
-    return JSON.parse(rawText);
+    const parsed = JSON.parse(rawText);
+    console.info(`[SharePoint sync] JSON parse success for ${requestUrl}`);
+    return parsed;
   } catch (error) {
     console.error(`[SharePoint sync] Invalid JSON from ${requestUrl}`, error);
     throw new Error(`Invalid JSON from ${requestUrl}`);
@@ -541,7 +569,15 @@ function withCacheBust(path) {
 
 function ensureDebugPanel() {
   const syncSummary = document.getElementById("syncSummary");
-  if (!syncSummary || syncSummary.parentElement?.querySelector('[data-debug-panel="sync"]')) return;
+  const existingPanel =
+    document.querySelector('[data-debug-panel="sync"]') ||
+    document.getElementById("syncDebugPanel") ||
+    document.getElementById("debugPanel");
+  if (existingPanel) {
+    dom.debugPanel = existingPanel;
+    return;
+  }
+  if (!syncSummary) return;
   const panel = document.createElement("div");
   panel.dataset.debugPanel = "sync";
   panel.className = "subtle";
@@ -555,12 +591,17 @@ function ensureDebugPanel() {
 
 function updateDebugPanel() {
   if (!dom.debugPanel) return;
+  const now = Date.now();
+  const nextSyncInSeconds = state.nextPollDueAt
+    ? Math.max(0, Math.ceil((state.nextPollDueAt - now) / 1000))
+    : Math.ceil(state.pollingIntervalMs / 1000);
   dom.debugPanel.innerHTML = [
     `<strong>Debug:</strong>`,
-    `Last poll: ${formatDate(state.lastPollAt)}`,
+    `Next sync in: ${nextSyncInSeconds}s`,
+    `Last poll attempt: ${formatDate(state.lastPollAt)}`,
     `Last successful refresh: ${formatDate(state.lastSuccessfulIndexFetchAt)}`,
-    `Last error: ${escapeHtml(state.lastPollError || "None")}`,
-    `Loaded files: ${state.records.length}`,
+    `Last error: ${escapeHtml(state.lastPollError || "none")}`,
+    `Current file count: ${state.records.length}`,
   ].join(" • ");
 }
 
