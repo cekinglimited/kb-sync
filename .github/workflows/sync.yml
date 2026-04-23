@@ -37,14 +37,18 @@ jobs:
 
           curl -H "Authorization: Bearer $ACCESS_TOKEN" \
           "https://graph.microsoft.com/v1.0/drives/b!uqgHR9wiN0uomwuRQeJTgVqAfA4bIDRBtstVmpSQbdNFofPisy05Ra0aiz0-Crn4/root:/Knowledge%20Base/FAQ:/children"
-      - name: Test HTML conversion
+            - name: Test DOCX to HTML
         run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip
+          python -m pip install mammoth
+
           ACCESS_TOKEN=$(curl -s -X POST "https://login.microsoftonline.com/${{ secrets.AZURE_TENANT_ID }}/oauth2/v2.0/token" \
           -H "Content-Type: application/x-www-form-urlencoded" \
           -d "client_id=${{ secrets.AZURE_CLIENT_ID }}&client_secret=${{ secrets.AZURE_CLIENT_SECRET }}&scope=https://graph.microsoft.com/.default&grant_type=client_credentials" | jq -r .access_token)
 
           curl -L -H "Authorization: Bearer $ACCESS_TOKEN" \
-          "https://graph.microsoft.com/v1.0/drives/b!uqgHR9wiN0uomwuRQeJTgVqAfA4bIDRBtstVmpSQbdNFofPisy05Ra0aiz0-Crn4/items/01APWLVA6VO3MFUKDSKJF272KQFHA6SS2Z/content?format=html" \
-          -o test.html
+          "https://graph.microsoft.com/v1.0/drives/b!uqgHR9wiN0uomwuRQeJTgVqAfA4bIDRBtstVmpSQbdNFofPisy05Ra0aiz0-Crn4/items/01APWLVA6VO3MFUKDSKJF272KQFHA6SS2Z/content" \
+          -o test.docx
 
-          head -20 test.html
+          python -c "import mammoth; print(mammoth.convert_to_html(open('test.docx','rb')).value[:2000])"
