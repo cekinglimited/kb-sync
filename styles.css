@@ -1,0 +1,269 @@
+:root {
+  --bg: #f4f6fb;
+  --surface: #ffffff;
+  --surface-alt: #f9fafc;
+  --text: #172233;
+  --muted: #4f6075;
+  --primary: #0f62fe;
+  --primary-soft: #e8f0ff;
+  --border: #d7dfeb;
+  --danger-soft: #fff0f0;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Inter, system-ui, -apple-system, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  line-height: 1.45;
+}
+
+.topbar {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.sync-summary {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: minmax(320px, 42%) 1fr;
+  gap: 1rem;
+  padding: 1rem;
+  min-height: calc(100vh - 80px);
+}
+
+.list-panel,
+.viewer-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.controls {
+  padding: 0.9rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-alt);
+}
+
+.search-label,
+label {
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+input[type="search"],
+select,
+button,
+a {
+  font: inherit;
+}
+
+input[type="search"],
+select {
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-top: 0.35rem;
+  background: #fff;
+}
+
+.control-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  margin-top: 0.65rem;
+}
+
+.control-row:last-child {
+  grid-template-columns: 1fr 1fr;
+  align-items: end;
+}
+
+.subtle {
+  font-size: 0.78rem;
+  color: var(--muted);
+  align-self: center;
+  justify-self: end;
+}
+
+.list-status {
+  padding: 0.75rem 0.9rem;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.result-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+}
+
+.result-item {
+  border-bottom: 1px solid var(--border);
+}
+
+.result-button {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 0.8rem 0.9rem;
+  cursor: pointer;
+}
+
+.result-button:hover,
+.result-button:focus-visible,
+.result-item.active .result-button {
+  background: var(--primary-soft);
+  outline: none;
+}
+
+.result-title {
+  margin: 0 0 0.2rem;
+  font-size: 0.98rem;
+}
+
+.result-path,
+.result-meta,
+.result-snippet {
+  margin: 0.12rem 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.result-snippet mark {
+  background: #ffef99;
+  padding: 0;
+}
+
+.pagination {
+  border-top: 1px solid var(--border);
+  padding: 0.65rem 0.8rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+button {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.45rem 0.7rem;
+  background: #fff;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: #b6c2d4;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.viewer-panel {
+  padding: 1rem;
+}
+
+.hidden { display: none; }
+
+.empty-state {
+  margin: auto;
+  text-align: center;
+  color: var(--muted);
+}
+
+.viewer header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.viewer h2 {
+  margin: 0 0 0.6rem;
+  font-size: 1.25rem;
+}
+
+.viewer-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.viewer-actions a {
+  text-decoration: none;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.metadata-grid {
+  margin: 0.7rem 0 1rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.55rem;
+}
+
+.metadata-grid div {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.55rem;
+  background: var(--surface-alt);
+}
+
+.metadata-grid dt {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+}
+
+.metadata-grid dd {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.doc-content {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.9rem;
+  background: #fff;
+  max-height: 62vh;
+  overflow: auto;
+  font-size: 0.94rem;
+}
+
+.doc-content.unsupported {
+  background: var(--danger-soft);
+  color: #8a3030;
+}
+
+@media (max-width: 940px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .viewer-panel {
+    min-height: 360px;
+  }
+}

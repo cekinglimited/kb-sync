@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SharePoint Knowledge Base</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>Knowledge Base</h1>
+      <p id="syncSummary" class="sync-summary">Loading sync summary…</p>
+    </header>
+
+    <main class="app-shell">
+      <section class="list-panel" aria-label="Document list and filters">
+        <div class="controls">
+          <label class="search-label" for="searchInput">Search</label>
+          <input id="searchInput" type="search" placeholder="Search name, path, or content…" autocomplete="off" />
+
+          <div class="control-row">
+            <label for="driveFilter">Drive</label>
+            <select id="driveFilter">
+              <option value="">All drives</option>
+            </select>
+
+            <label for="typeFilter">File type</label>
+            <select id="typeFilter">
+              <option value="">All types</option>
+            </select>
+          </div>
+
+          <div class="control-row">
+            <label for="sortBy">Sort</label>
+            <select id="sortBy">
+              <option value="modified_desc">Last modified (newest)</option>
+              <option value="modified_asc">Last modified (oldest)</option>
+              <option value="name_asc">Name (A–Z)</option>
+              <option value="name_desc">Name (Z–A)</option>
+            </select>
+            <span id="indexingState" class="subtle"></span>
+          </div>
+        </div>
+
+        <div id="listStatus" class="list-status">Loading index…</div>
+        <ul id="resultList" class="result-list" aria-live="polite"></ul>
+
+        <nav class="pagination">
+          <button id="prevPageBtn" type="button">Previous</button>
+          <span id="pageInfo">Page 1</span>
+          <button id="nextPageBtn" type="button">Next</button>
+        </nav>
+      </section>
+
+      <section class="viewer-panel" aria-label="Document viewer">
+        <div id="viewerEmpty" class="empty-state">
+          <h2>Select a document</h2>
+          <p>Pick an item from the list to view full details and extracted content.</p>
+        </div>
+
+        <article id="viewer" class="viewer hidden">
+          <header>
+            <h2 id="docTitle"></h2>
+            <div class="viewer-actions">
+              <a id="docSourceLink" href="#" target="_blank" rel="noopener noreferrer">Open source</a>
+              <button id="copyLinkBtn" type="button">Copy link</button>
+            </div>
+          </header>
+
+          <dl class="metadata-grid">
+            <div><dt>Path</dt><dd id="docPath"></dd></div>
+            <div><dt>Drive</dt><dd id="docDrive"></dd></div>
+            <div><dt>File type</dt><dd id="docType"></dd></div>
+            <div><dt>Last modified</dt><dd id="docModified"></dd></div>
+          </dl>
+
+          <section>
+            <h3>Extracted content</h3>
+            <div id="docContent" class="doc-content"></div>
+          </section>
+        </article>
+      </section>
+    </main>
+
+    <template id="resultItemTemplate">
+      <li class="result-item">
+        <button type="button" class="result-button">
+          <h3 class="result-title"></h3>
+          <p class="result-path"></p>
+          <p class="result-meta"></p>
+          <p class="result-snippet"></p>
+        </button>
+      </li>
+    </template>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
