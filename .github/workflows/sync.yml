@@ -41,7 +41,7 @@ jobs:
           curl -H "Authorization: Bearer $ACCESS_TOKEN" \
           "https://graph.microsoft.com/v1.0/drives/b!uqgHR9wiN0uomwuRQeJTgVqAfA4bIDRBtstVmpSQbdNFofPisy05Ra0aiz0-Crn4/root:/Knowledge%20Base/FAQ:/children"
 
-      - name: Convert ALL FAQ files
+            - name: Convert ALL FAQ files
         run: |
           sudo apt-get update
           sudo apt-get install -y unzip jq
@@ -51,12 +51,14 @@ jobs:
           -H "Content-Type: application/x-www-form-urlencoded" \
           -d "client_id=${{ secrets.AZURE_CLIENT_ID }}&client_secret=${{ secrets.AZURE_CLIENT_SECRET }}&scope=https://graph.microsoft.com/.default&grant_type=client_credentials" | jq -r .access_token)
 
-          FILES=$(curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
-          "https://graph.microsoft.com/v1.0/drives/b!uqgHR9wiN0uomwuRQeJTgVqAfA4bIDRBtstVmpSQbdNFofPisy05Ra0aiz0-Crn4/root:/Knowledge%20Base/FAQ:/children")
+          curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
+          "https://graph.microsoft.com/v1.0/drives/b!uqgHR9wiN0uomwuRQeJTgVqAfA4bIDRBtstVmpSQbdNFofPisy05Ra0aiz0-Crn4/root:/Knowledge%20Base/FAQ:/children" \
+          > files.json
 
-          echo "$FILES" | jq -c '.value[]' | while read file; do
-            NAME=$(echo "$file" | jq -r '.name')
-            ID=$(echo "$file" | jq -r '.id')
+          jq -r '.value[] | @base64' files.json | while read row; do
+            ITEM=$(echo "$row" | base64 -d)
+            NAME=$(echo "$ITEM" | jq -r '.name')
+            ID=$(echo "$ITEM" | jq -r '.id')
 
             echo "Processing: $NAME"
 
