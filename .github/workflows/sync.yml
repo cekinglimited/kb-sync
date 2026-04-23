@@ -41,7 +41,7 @@ jobs:
           curl -H "Authorization: Bearer $ACCESS_TOKEN" \
           "https://graph.microsoft.com/v1.0/drives/b!uqgHR9wiN0uomwuRQeJTgVqAfA4bIDRBtstVmpSQbdNFofPisy05Ra0aiz0-Crn4/root:/Knowledge%20Base/FAQ:/children"
 
-            - name: Convert ALL FAQ files
+      - name: Convert ALL FAQ files
         run: |
           sudo apt-get update
           sudo apt-get install -y unzip jq
@@ -55,8 +55,8 @@ jobs:
           "https://graph.microsoft.com/v1.0/drives/b!uqgHR9wiN0uomwuRQeJTgVqAfA4bIDRBtstVmpSQbdNFofPisy05Ra0aiz0-Crn4/root:/Knowledge%20Base/FAQ:/children")
 
           echo "$FILES" | jq -c '.value[]' | while read file; do
-            NAME=$(echo $file | jq -r '.name')
-            ID=$(echo $file | jq -r '.id')
+            NAME=$(echo "$file" | jq -r '.name')
+            ID=$(echo "$file" | jq -r '.id')
 
             echo "Processing: $NAME"
 
@@ -64,9 +64,5 @@ jobs:
             "https://graph.microsoft.com/v1.0/drives/b!uqgHR9wiN0uomwuRQeJTgVqAfA4bIDRBtstVmpSQbdNFofPisy05Ra0aiz0-Crn4/items/$ID/content" \
             -o "$NAME"
 
-            python -c "
-import mammoth, json
-html = mammoth.convert_to_html(open('$NAME','rb')).value
-print(json.dumps({'file': '$NAME', 'content': html}))
-"
+            python -c "import mammoth, json; html = mammoth.convert_to_html(open('$NAME','rb')).value; print(json.dumps({'file': '$NAME', 'content': html}))"
           done
