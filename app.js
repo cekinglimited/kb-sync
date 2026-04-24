@@ -173,7 +173,7 @@ function scheduleNextPoll() {
 
 async function refreshIndex({ force = false, source = "manual" } = {}) {
   state.lastPollAt = new Date().toISOString();
-  const nextIndex = await fetchJson(state.indexPath, { bustCache: true });
+  const nextIndex = await fetchIndexJson();
   state.lastSuccessfulIndexFetchAt = new Date().toISOString();
   state.lastPollError = null;
   const nextRecords = Array.isArray(nextIndex)
@@ -533,7 +533,9 @@ async function fetchJson(path, { bustCache = false } = {}) {
   if (!res.ok) {
     const message = `Failed to fetch ${requestUrl}: ${res.status} ${res.statusText}`;
     console.error(`[SharePoint sync] ${message}`);
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = res.status;
+    throw error;
   }
 
   const rawText = await res.text();
@@ -545,6 +547,46 @@ async function fetchJson(path, { bustCache = false } = {}) {
     console.error(`[SharePoint sync] Invalid JSON from ${requestUrl}`, error);
     throw new Error(`Invalid JSON from ${requestUrl}`);
   }
+}
+
+async function fetchIndexJson() {
+  const candidates = resolveIndexPathCandidates(state.indexPath);
+  let lastError = null;
+
+  for (const candidate of candidates) {
+    try {
+      const indexPayload = await fetchJson(candidate, { bustCache: true });
+      if (candidate !== state.indexPath) {
+        console.info(
+          `[SharePoint sync] Switched index path from ${state.indexPath} to ${candidate} after retry.`
+        );
+        state.indexPath = candidate;
+      }
+      return indexPayload;
+    } catch (error) {
+      lastError = error;
+      if (error?.status === 404) {
+        console.warn(`[SharePoint sync] Index path not found (404): ${candidate}`);
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw lastError || new Error("Failed to fetch index.json from all known paths.");
+}
+
+function resolveIndexPathCandidates(preferredPath) {
+  const normalizedPreferred = normalizeIndexPath(preferredPath);
+  const candidates = [normalizedPreferred];
+
+  if (normalizedPreferred === "/sharepoint_sync/index.json") {
+    candidates.push("/index.json");
+  } else if (normalizedPreferred === "/index.json") {
+    candidates.push("/sharepoint_sync/index.json");
+  }
+
+  return unique(candidates);
 }
 
 function withCacheBust(path) {
@@ -576,10 +618,14 @@ function readableError(error) {
 
 function resolveIndexPath() {
   const configuredPath = window.__KB_INDEX_PATH__ || "/sharepoint_sync/index.json";
-  if (typeof configuredPath !== "string" || !configuredPath.trim()) {
+  return normalizeIndexPath(configuredPath || "/sharepoint_sync/index.json");
+}
+
+function normalizeIndexPath(path) {
+  if (typeof path !== "string" || !path.trim()) {
     return "/sharepoint_sync/index.json";
   }
-  return configuredPath.startsWith("/") ? configuredPath : `/${configuredPath}`;
+  return path.startsWith("/") ? path : `/${path}`;
 }
 
 function unique(items) {
