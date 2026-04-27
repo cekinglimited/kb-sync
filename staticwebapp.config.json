@@ -1,4 +1,10 @@
 {
+  "routes": [
+    {
+      "route": "/doc/*",
+      "rewrite": "/index.html"
+    }
+  ],
   "navigationFallback": {
     "rewrite": "/index.html",
     "exclude": [
@@ -8,11 +14,6 @@
       "/favicon.ico",
       "/assets/*"
     ]
-  },
-  "responseOverrides": {
-    "404": {
-      "rewrite": "/index.html"
-    }
   },
   "mimeTypes": {
     ".json": "application/json"
