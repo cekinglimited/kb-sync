@@ -97,8 +97,7 @@ function wireEvents() {
 
   dom.copyLinkBtn.addEventListener("click", async () => {
     if (!state.selectedKey) return;
-    const url = new URL(window.location.href);
-    url.pathname = `/doc/${encodeURIComponent(state.selectedKey)}`;
+    const url = buildShareableDocUrl(state.selectedKey);
     await navigator.clipboard.writeText(url.toString());
     dom.copyLinkBtn.textContent = "Copied";
     setTimeout(() => {
@@ -326,8 +325,8 @@ async function selectRecord(record, pushState = true) {
   renderContent(contentDoc);
 
   if (pushState) {
-    const url = `/doc/${encodeURIComponent(record._id)}`;
-    history.pushState({}, "", url);
+    const nextUrl = buildShareableDocUrl(record._id);
+    history.pushState({}, "", `${nextUrl.pathname}${nextUrl.search}`);
   }
 }
 
@@ -457,8 +456,19 @@ function buildSnippet(record, query) {
 }
 
 function readSelectedFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const queryDocId = params.get("doc");
+  if (queryDocId) return queryDocId;
+
   const match = window.location.pathname.match(/^\/doc\/(.+)$/);
   return match ? decodeURIComponent(match[1]) : null;
+}
+
+function buildShareableDocUrl(docId) {
+  const url = new URL(window.location.href);
+  url.pathname = "/";
+  url.searchParams.set("doc", docId);
+  return url;
 }
 
 function extractSearchableText(doc) {

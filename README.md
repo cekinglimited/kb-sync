@@ -61,3 +61,4 @@ Use this checklist when you want to deploy a front-end change (including removin
 - Shows selected document details and content in a viewer panel.
 - Handles missing/unsupported extracted content gracefully.
 - Includes copy-link support for document deep links.
+- Uses query-parameter links (`/?doc={id}`) for shareable links to avoid 404s on hosts without SPA rewrites, while still supporting legacy `/doc/{id}` links.
