@@ -1,4 +1,7 @@
 {
+  "platform": {
+    "apiRuntime": "node:20"
+  },
   "routes": [
     {
       "route": "/doc/*",
@@ -8,6 +11,7 @@
   "navigationFallback": {
     "rewrite": "/index.html",
     "exclude": [
+      "/api/*",
       "/sharepoint_sync/*.{json,txt}",
       "/*.css",
       "/*.js",
