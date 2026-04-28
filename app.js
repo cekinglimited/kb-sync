@@ -17,6 +17,7 @@ const state = {
   previousIndexSignature: null,
   nextPollDueAt: null,
   pollTimeoutId: null,
+  assetBasePath: "",
 };
 
 const dom = {
@@ -483,7 +484,8 @@ function extractSearchableText(doc) {
 }
 
 function normalizeOutputPath(path) {
-  return `/${path.replace(/^\/+/, "")}`;
+  const normalized = String(path || "").replace(/^\/+/, "");
+  return prefixWithBasePath(state.assetBasePath, normalized);
 }
 
 function highlight(text, rawQuery) {
@@ -566,11 +568,13 @@ async function fetchIndexJson() {
   for (const candidate of candidates) {
     try {
       const indexPayload = await fetchJson(candidate, { bustCache: true });
-      if (candidate !== state.indexPath) {
+      const nextAssetBasePath = extractAssetBasePath(candidate);
+      if (candidate !== state.indexPath || nextAssetBasePath !== state.assetBasePath) {
         console.info(
           `[SharePoint sync] Switched index path from ${state.indexPath} to ${candidate} after retry.`
         );
         state.indexPath = candidate;
+        state.assetBasePath = nextAssetBasePath;
       }
       return indexPayload;
     } catch (error) {
@@ -588,17 +592,49 @@ async function fetchIndexJson() {
 
 function resolveIndexPathCandidates(preferredPath) {
   const normalizedPreferred = normalizeIndexPath(preferredPath);
-  const candidates = [normalizedPreferred];
+  const searchRoots = resolvePathSearchRoots(window.location.pathname);
+  const relativeTargets = normalizedPreferred === "/index.json"
+    ? ["index.json", "sharepoint_sync/index.json"]
+    : ["sharepoint_sync/index.json", "index.json"];
 
-  if (normalizedPreferred === "/sharepoint_sync/index.json") {
-    candidates.push("/index.json");
-  } else if (normalizedPreferred === "/index.json") {
-    candidates.push("/sharepoint_sync/index.json");
+  const candidates = [];
+  for (const root of searchRoots) {
+    for (const relativeTarget of relativeTargets) {
+      candidates.push(prefixWithBasePath(root, relativeTarget));
+    }
   }
 
   return unique(candidates);
 }
 
+
+function resolvePathSearchRoots(pathname) {
+  const normalizedPath = String(pathname || "/");
+  const segments = normalizedPath.split("/").filter(Boolean);
+  const roots = [""];
+
+  for (let i = 1; i <= segments.length; i += 1) {
+    roots.push(`/${segments.slice(0, i).join("/")}`);
+  }
+
+  return roots.reverse().filter((root, index, arr) => arr.indexOf(root) === index);
+}
+
+function extractAssetBasePath(indexPath) {
+  if (indexPath.endsWith("/sharepoint_sync/index.json")) {
+    return indexPath.slice(0, -"/sharepoint_sync/index.json".length);
+  }
+  if (indexPath.endsWith("/index.json")) {
+    return indexPath.slice(0, -"/index.json".length);
+  }
+  return "";
+}
+
+function prefixWithBasePath(basePath, relativePath) {
+  const cleanBase = String(basePath || "").replace(/\/+$/, "");
+  const cleanRelative = String(relativePath || "").replace(/^\/+/, "");
+  return cleanBase ? `${cleanBase}/${cleanRelative}` : `/${cleanRelative}`;
+}
 function withCacheBust(path) {
   const url = new URL(path, window.location.origin);
   url.searchParams.set("t", Date.now().toString());
