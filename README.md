@@ -25,7 +25,9 @@ npx serve .
 
 ## Azure Static Web Apps deployment notes
 
-- This app is plain static HTML/CSS/JS and does not require a custom API.
+- This app is plain static HTML/CSS/JS and supports an optional Azure Static Web Apps API.
+
+- This repo now includes an Azure Static Web Apps API endpoint at `api/contact` (served at `/api/contact`) with GET and POST handling for quick browser validation and form submissions.
 - `staticwebapp.config.json` is included for SPA deep-link support (for routes like `/doc/{id}`) and navigation fallback.
 - In Azure Static Web Apps, set app location to the repository root (`/`) and output location to empty (or `/`, depending on portal input).
 - Ensure your SharePoint sync workflow continues committing updated JSON files under `sharepoint_sync/`.
