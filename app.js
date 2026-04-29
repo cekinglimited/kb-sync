@@ -113,10 +113,10 @@ function wireEvents() {
 }
 
 function fillFilterOptions() {
-  for (const drive of unique(state.records.map((x) => x.drive_name).filter(Boolean))) {
+  for (const drive of uniquePreserveOrder(state.records.map((x) => x.drive_name).filter(Boolean))) {
     dom.driveFilter.add(new Option(drive, drive));
   }
-  for (const ext of unique(state.records.map((x) => x.extension || "(none)"))) {
+  for (const ext of uniquePreserveOrder(state.records.map((x) => x.extension || "(none)"))) {
     dom.typeFilter.add(new Option(ext, ext));
   }
 }
@@ -550,7 +550,17 @@ async function fetchJson(path, { bustCache = false } = {}) {
     throw error;
   }
 
+  const contentType = (res.headers.get("content-type") || "").toLowerCase();
   const rawText = await res.text();
+  const looksLikeHtml = contentType.includes("text/html") || /^\s*<!doctype html/i.test(rawText) || /^\s*<html[\s>]/i.test(rawText);
+
+  if (looksLikeHtml) {
+    const error = new Error(`Received HTML instead of JSON from ${requestUrl}`);
+    error.isNonJsonResponse = true;
+    console.warn(`[SharePoint sync] ${error.message}`);
+    throw error;
+  }
+
   try {
     const parsed = JSON.parse(rawText);
     console.info(`[SharePoint sync] JSON parse success for ${requestUrl}`);
@@ -576,11 +586,16 @@ async function fetchIndexJson() {
         state.indexPath = candidate;
         state.assetBasePath = nextAssetBasePath;
       }
+      console.info(`[SharePoint sync] Loaded index JSON successfully from ${candidate}`);
       return indexPayload;
     } catch (error) {
       lastError = error;
       if (error?.status === 404) {
         console.warn(`[SharePoint sync] Index path not found (404): ${candidate}`);
+        continue;
+      }
+      if (error?.isNonJsonResponse) {
+        console.warn(`[SharePoint sync] Non-JSON response from candidate ${candidate}. Trying next candidate.`);
         continue;
       }
       throw error;
@@ -593,9 +608,9 @@ async function fetchIndexJson() {
 function resolveIndexPathCandidates(preferredPath) {
   const normalizedPreferred = normalizeIndexPath(preferredPath);
   const searchRoots = resolvePathSearchRoots(window.location.pathname);
-  const relativeTargets = normalizedPreferred === "/index.json"
-    ? ["index.json", "sharepoint_sync/index.json"]
-    : ["sharepoint_sync/index.json", "index.json"];
+  const relativeTargets = normalizedPreferred === "/sharepoint_sync/index.json"
+    ? ["sharepoint_sync/index.json", "index.json"]
+    : [normalizedPreferred.replace(/^\/+/, ""), "sharepoint_sync/index.json", "index.json"];
 
   const candidates = [];
   for (const root of searchRoots) {
@@ -604,7 +619,7 @@ function resolveIndexPathCandidates(preferredPath) {
     }
   }
 
-  return unique(candidates);
+  return uniquePreserveOrder(candidates);
 }
 
 
@@ -674,8 +689,15 @@ function normalizeIndexPath(path) {
   return path.startsWith("/") ? path : `/${path}`;
 }
 
-function unique(items) {
-  return [...new Set(items)].sort((a, b) => String(a).localeCompare(String(b)));
+function uniquePreserveOrder(items) {
+  const seen = new Set();
+  const ordered = [];
+  for (const item of items) {
+    if (seen.has(item)) continue;
+    seen.add(item);
+    ordered.push(item);
+  }
+  return ordered;
 }
 
 function escapeRegExp(str) {
